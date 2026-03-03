@@ -12,6 +12,12 @@
  */
 struct TCB {
     t_state state;
+
+    // --- Dynamic Priority Scheduler ---
+    int priority;        
+    int waiting_time;    
+    int cpu_ticks;       
+    float cpu_score;
     unsigned int prev;
     unsigned int next;
 };
