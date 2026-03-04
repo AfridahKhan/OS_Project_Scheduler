@@ -3,8 +3,8 @@
 
 #ifdef _KERN_
 
-void tcb_init(unsigned int mbi_addr);
+void tcb_init(unsigned int);
 
-#endif  /* _KERN_ */
+#endif /* _KERN_ */
 
-#endif  /* !_KERN_THREAD_PTCBINIT_H_ */
+#endif /* !_KERN_THREAD_PTCBINIT_H_ */

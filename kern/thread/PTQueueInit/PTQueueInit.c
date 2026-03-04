@@ -3,109 +3,153 @@
 #include "import.h"
 
 /**
- * Initializes all the thread queues with tqueue_init_at_id.
+ * Initializes all the thread queues with
+ * tqueue_init_at_id.
  */
 void tqueue_init(unsigned int mbi_addr)
 {
-    // TODO: define your local variables here.
-    
-    tcb_init(mbi_addr);
-    unsigned int id;
-    // TODO
-    for(id = 0; id <= NUM_IDS; id++){
-        //NUM_IDS + 1 QUEUES IN TOTAL
-        tqueue_init_at_id(id);
-    }
-}
-    
+	unsigned int cpu_idx, chid;
 
-    /**
-     * Insert the TCB #pid into the tail of the thread queue #chid.
-     * Recall that the doubly linked list is index based.
-     * So you only need to insert the index.
-     * Hint: there are multiple cases in this function.
-     */
+	tcb_init(mbi_addr);
+
+	chid = 0;
+	cpu_idx = 0;
+	while (cpu_idx < NUM_CPUS) {
+		while (chid < NUM_IDS + NPRIO ) {
+			tqueue_init_at_id(cpu_idx, chid);
+			chid++;
+		}
+		chid = 0;
+		cpu_idx++;
+	}
+}
+
+/**
+ * Insert the TCB #pid into the tail of the thread queue #chid.
+ * Recall that the doubly linked list is index based.
+ * So you only need to insert the index.
+ * Hint: there are multiple cases in this function.
+ */
 void tqueue_enqueue(unsigned int chid, unsigned int pid)
 {
-    // TODO
-    // remove pid from TCB list
+	unsigned int tail;
 
-    unsigned int tail_pid;
+	tail = tqueue_get_tail(chid);
 
-    // link pid to the tail of queue
-    // move tail to point to pid 
-    tail_pid = tqueue_get_tail(chid);
-    if(tail_pid != NUM_IDS){
-        tcb_set_next(tail_pid, pid);
-    }
-    else{
-        tqueue_set_head(chid, pid);
-    }
-    
-    tcb_set_prev(pid, tail_pid); 
-    
-    // tail_pid may be NUM_IDS, but it does't matter
-    tqueue_set_tail(chid, pid);
+	if (tail == NUM_IDS) {
+		tcb_set_prev(pid, NUM_IDS);
+		tcb_set_next(pid, NUM_IDS);
+		tqueue_set_head(chid, pid);
+		tqueue_set_tail(chid, pid);
+	} else {
+		tcb_set_next(tail, pid);
+		tcb_set_prev(pid, tail);
+		tcb_set_next(pid, NUM_IDS);
+		tqueue_set_tail(chid, pid);
+	}
 }
-    
+
 /**
-* Reverse action of tqueue_enqueue, i.g., pops a TCB from the head of specified queue.
-* It returns the poped thread's id, or NUM_IDS if the queue is empty.
-*Hint: there are mutiple cases in this function.
-*/
+ * Reverse action of tqueue_enqueue, i.g., pops a TCB from the head of specified queue.
+ * It returns the poped thread's id, or NUM_IDS if the queue is empty.
+ * Hint: there are mutiple cases in this function.
+ */
 unsigned int tqueue_dequeue(unsigned int chid)
 {
-    // TODO
-    unsigned int head_id, head_next_id;
-    head_id = tqueue_get_head(chid);
-    if(head_id == NUM_IDS) return NUM_IDS;
-    
-    // head_id is valid below this line
-    head_next_id = tcb_get_next(head_id);
-    if(head_next_id != NUM_IDS){
-        // head_next_id exists
-        tcb_set_prev(head_next_id, NUM_IDS);
-    }
-    else{
-        tqueue_set_tail(chid, NUM_IDS);
-    }
-    tcb_set_next(head_id, NUM_IDS);
-    tqueue_set_head(chid, head_next_id);
-    return head_id;
+	unsigned int head, next, pid;
+
+	pid = NUM_IDS;
+	head = tqueue_get_head(chid);
+
+	if (head != NUM_IDS) {
+		pid = head;
+		next = tcb_get_next(head);
+
+		if(next == NUM_IDS) {
+			tqueue_set_head(chid, NUM_IDS);
+			tqueue_set_tail(chid, NUM_IDS);
+		} else {
+			tcb_set_prev(next, NUM_IDS);
+			tqueue_set_head(chid, next);
+		}
+    tcb_set_prev(pid, NUM_IDS);
+    tcb_set_next(pid, NUM_IDS);
+	}
+
+	return pid;
 }
-    
+
 /**
  * Removes the TCB #pid from the queue #chid.
  * Hint: there are many cases in this function.
  */
 void tqueue_remove(unsigned int chid, unsigned int pid)
 {
-    // TODO
-    unsigned int head_pid, tail_pid;
-    unsigned int prev_pid, next_pid;
-    head_pid = tqueue_get_head(chid);
-    tail_pid = tqueue_get_tail(chid);
-    prev_pid = tcb_get_prev(pid);
-    next_pid = tcb_get_next(pid);
-    if(head_pid == pid){
-        // we are deleting head
-        // move head to head->next
-        tqueue_set_head(chid, next_pid);
+	unsigned int prev, next;
+
+	prev = tcb_get_prev(pid);
+	next = tcb_get_next(pid);
+
+	if (prev == NUM_IDS) {
+		if (next == NUM_IDS) {
+			tqueue_set_head(chid, NUM_IDS);
+			tqueue_set_tail(chid, NUM_IDS);
+		} else {
+			tcb_set_prev(next, NUM_IDS);
+			tqueue_set_head(chid, next);
+		}
+	} else {
+		if (next == NUM_IDS) {
+			tcb_set_next(prev, NUM_IDS);
+			tqueue_set_tail(chid, prev);
+		} else {
+			if (prev != next)
+				tcb_set_next(prev, next);
+			tcb_set_prev(next, prev);
+		}
+	}
+  tcb_set_prev(pid, NUM_IDS);
+  tcb_set_next(pid, NUM_IDS);
+}
+
+void ready_enqueue(unsigned int tid, unsigned int priority)
+{
+    unsigned int qid  = READY_QUEUE(priority);
+    unsigned int tail = tqueue_get_tail(qid);
+
+    if (tail == NUM_IDS) {
+        tqueue_set_head(qid, tid);
+        tcb_set_prev(tid, NUM_IDS);   // FIX: no prev when queue was empty
+    } else {
+        tcb_set_next(tail, tid);
+        tcb_set_prev(tid, tail);
     }
-    if(tail_pid == pid){
-        // we are deleting tail
-        // move tail to tail->prev
-        tqueue_set_tail(chid, prev_pid);
+
+    tqueue_set_tail(qid, tid);
+    tcb_set_next(tid, NUM_IDS);
+
+    tcb_set_priority(tid, priority);
+}
+
+unsigned int ready_dequeue(void)
+{
+    for (int prio = MAX_PRIORITY; prio >= 0; prio--) {
+        unsigned int qid  = READY_QUEUE(prio);
+        unsigned int head = tqueue_get_head(qid);
+
+        if (head != NUM_IDS) {
+            unsigned int next = tcb_get_next(head);
+
+            tqueue_set_head(qid, next);
+            if (next == NUM_IDS)
+                tqueue_set_tail(qid, NUM_IDS);
+            else
+                tcb_set_prev(next, NUM_IDS);
+
+            tcb_set_next(head, NUM_IDS);   // FIX: clean dequeued thread
+            tcb_set_prev(head, NUM_IDS);   // FIX: clean dequeued thread
+            return head;
+        }
     }
-    if(next_pid != NUM_IDS){
-        // pid is not tail
-        tcb_set_prev(next_pid, prev_pid);
-    }
-    if(prev_pid != NUM_IDS){
-        // pid is not head
-        tcb_set_next(prev_pid, next_pid);
-    }
-    
-    tcb_set_next(pid, NUM_IDS);
-    tcb_set_prev(pid, NUM_IDS);
+    return NUM_IDS;
 }
