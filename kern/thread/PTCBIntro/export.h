@@ -9,8 +9,24 @@ unsigned int tcb_get_prev(unsigned int pid);
 void tcb_set_prev(unsigned int pid, unsigned int prev_pid);
 unsigned int tcb_get_next(unsigned int pid);
 void tcb_set_next(unsigned int pid, unsigned int next_pid);
-void tcb_init_at_id(unsigned int pid);
+void tcb_init_at_id(unsigned int cpu_idx, unsigned int pid);
 
-#endif  /* _KERN_ */
+void* tcb_get_chan(unsigned int pid);
+void tcb_set_chan(unsigned int pid, void *state);
 
-#endif  /* !_KERN_THREAD_PTCBINTRO_H_ */
+#include <kern/fs/stat.h>
+#include <kern/fs/dinode.h>
+#include <kern/fs/inode.h>
+#include <kern/fs/file.h>
+
+struct file** tcb_get_openfiles(unsigned int pid);
+void tcb_set_openfiles(unsigned int pid, int fd, struct file* f);
+struct inode* tcb_get_cwd(unsigned int pid);
+void tcb_set_cwd(unsigned int pid, struct inode* d);
+
+int tcb_get_priority(unsigned int pid);
+void tcb_set_priority(unsigned int pid, int prio);
+  
+#endif /* _KERN_ */
+
+#endif /* !_KERN_THREAD_PTCBINTRO_H_ */
