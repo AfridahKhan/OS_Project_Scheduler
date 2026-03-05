@@ -6,7 +6,16 @@
 #include <pcpu/PCPUIntro/export.h>
 #include <kern/thread/PTCBIntro/export.h>
 
+#define ALPHA 50
+#define CPU_HIGH 75
+#define CPU_LOW 25
+#define MAX_PRIORITY 9
+#define MIN_PRIORITY 0
+
+
 #include "import.h"
+
+extern struct TCB TCBPool[NUM_IDS];
 
 static spinlock_t sched_lk;
 
@@ -66,12 +75,66 @@ void thread_yield(void)
 void sched_update(void)
 {
     spinlock_acquire(&sched_lk);
-    sched_ticks[get_pcpu_idx()] += (1000 / LAPIC_TIMER_INTR_FREQ);
-    if (sched_ticks[get_pcpu_idx()] > SCHED_SLICE) {
-        sched_ticks[get_pcpu_idx()] = 0;
+
+    unsigned int cpu = get_pcpu_idx();
+    unsigned int pid = get_curid();
+
+    /* Track time slice progress */
+    sched_ticks[cpu] += (1000 / LAPIC_TIMER_INTR_FREQ);
+
+    /* Track per-thread CPU usage */
+    TCBPool[pid].cpu_ticks++;
+
+    if (sched_ticks[cpu] > SCHED_SLICE) {
+
+        sched_ticks[cpu] = 0;
+
+        /* -------- NEW LOGIC -------- */
+
+        /* Compute recent CPU usage (scaled 0–100) */
+        int recent_cpu = (TCBPool[pid].cpu_ticks * 100) / SCHED_SLICE;
+        if (recent_cpu > 100)
+            recent_cpu = 100;
+
+        /* Exponential average:
+           cpu_score = α * recent + (1 - α) * old */
+        int old_score = TCBPool[pid].cpu_score;
+
+        int new_score =
+            (ALPHA * recent_cpu +
+             (100 - ALPHA) * old_score) / 100;
+
+        if (new_score < 0)
+            new_score = 0;
+        if (new_score > 100)
+            new_score = 100;
+
+        TCBPool[pid].cpu_score = new_score;
+
+        /* Reset tick counter */
+        TCBPool[pid].cpu_ticks = 0;
+
+        /* -------- PRIORITY ADJUST -------- */
+
+        int prio = tcb_get_priority(pid);
+
+        if (new_score >= CPU_HIGH) {
+            if (prio < MAX_PRIORITY)
+                prio++;
+        }
+        else if (new_score <= CPU_LOW) {
+            if (prio > MIN_PRIORITY)
+                prio--;
+        }
+
+        tcb_set_priority(pid, prio);
+
+        /* ------------------------------- */
+
         spinlock_release(&sched_lk);
         thread_yield();
-    } else {
+    }
+    else {
         spinlock_release(&sched_lk);
     }
 }
@@ -87,18 +150,64 @@ void thread_sleep(void *chan, spinlock_t *lk)
     spinlock_acquire(&sched_lk);
     spinlock_release(lk);
 
+    /* --------- NEW CPU ACCOUNTING --------- */
+
+    /* Compute recent CPU usage */
+    int recent_cpu = (TCBPool[curid].cpu_ticks * 100) / SCHED_SLICE;
+    if (recent_cpu > 100)
+        recent_cpu = 100;
+
+    int old_score = TCBPool[curid].cpu_score;
+
+    int new_score =
+        (ALPHA * recent_cpu +
+         (100 - ALPHA) * old_score) / 100;
+
+    if (new_score < 0)
+        new_score = 0;
+    if (new_score > 100)
+        new_score = 100;
+
+    TCBPool[curid].cpu_score = new_score;
+
+    /* Reset CPU tick counter */
+    TCBPool[curid].cpu_ticks = 0;
+
+    /* Adjust priority */
+    int prio = tcb_get_priority(curid);
+
+    if (new_score >= CPU_HIGH) {
+        if (prio < MAX_PRIORITY)
+            prio++;
+    }
+    else if (new_score <= CPU_LOW) {
+        if (prio > MIN_PRIORITY)
+            prio--;
+    }
+
+    tcb_set_priority(curid, prio);
+
+    /* -------------------------------------- */
+
     tcb_set_state(curid, TSTATE_SLEEP);
     tcb_set_chan(curid, chan);
 
-    new_cur_pid = ready_dequeue();                               // CHANGED
+    new_cur_pid = ready_dequeue();
+
+    /* Safety check */
+    if (new_cur_pid == NUM_IDS)
+        KERN_PANIC("No runnable thread!");
+
     tcb_set_state(new_cur_pid, TSTATE_RUN);
     set_curid(new_cur_pid);
+
     spinlock_release(&sched_lk);
     kctx_switch(curid, new_cur_pid);
 
     spinlock_acquire(&sched_lk);
     tcb_set_chan(curid, 0);
     spinlock_release(&sched_lk);
+
     spinlock_acquire(lk);
 }
 

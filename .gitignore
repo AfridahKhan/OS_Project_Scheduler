@@ -1,5 +1,3 @@
-# Build artifacts
-*.o
-*.d
+
 obj/
-build/
+certikos
